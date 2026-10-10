@@ -1,5 +1,6 @@
 #if DEBUG
 import Foundation
+import OpenAPIRuntime
 
 enum APIExamples {
     static func run() async {
@@ -10,7 +11,7 @@ enum APIExamples {
             client = try APIClientFactory.makeClient()
             apiKey = try APIConfiguration.load().apiKey
         } catch {
-            print("Проверьте настройки API в Secrets.xcconfig")
+            print("Проверьте настройки API в Secrets.xcconfig: \(errorDescription(error))")
             return
         }
 
@@ -28,7 +29,7 @@ enum APIExamples {
             let response = try await service.getNearestStations(lat: 59.864177, lng: 30.319163, distance: 10)
             print("Ближайшие станции: \(response.stations?.count ?? 0)")
         } catch {
-            print("Не удалось получить ближайшие станции")
+            print("Не удалось получить ближайшие станции: \(errorDescription(error))")
         }
 
         guard !Task.isCancelled else { return }
@@ -37,7 +38,7 @@ enum APIExamples {
             let response = try await service.getSchedule(from: "c146", to: "c213", date: date, transfers: true)
             print("Маршруты между городами: \(response.segments?.count ?? 0)")
         } catch {
-            print("Не удалось получить маршруты между городами")
+            print("Не удалось получить маршруты между городами: \(errorDescription(error))")
         }
 
         guard !Task.isCancelled else { return }
@@ -47,7 +48,7 @@ enum APIExamples {
             routeUID = response.schedule?.compactMap { $0.thread?.uid }.first { !$0.isEmpty }
             print("Рейсы на станции: \(response.schedule?.count ?? 0)")
         } catch {
-            print("Не удалось получить расписание станции")
+            print("Не удалось получить расписание станции: \(errorDescription(error))")
         }
 
         guard !Task.isCancelled else { return }
@@ -57,7 +58,7 @@ enum APIExamples {
                 let response = try await service.getRoute(uid: routeUID, date: date)
                 print("Остановки рейса: \(response.stops?.count ?? 0)")
             } catch {
-                print("Не удалось получить остановки рейса")
+                print("Не удалось получить остановки рейса: \(errorDescription(error))")
             }
         } else {
             print("В расписании нет рейса для проверки остановок")
@@ -69,7 +70,7 @@ enum APIExamples {
             let response = try await service.getNearestSettlement(lat: 59.864177, lng: 30.319163)
             print("Ближайший город: \(response.title ?? "не найден")")
         } catch {
-            print("Не удалось получить ближайший город")
+            print("Не удалось получить ближайший город: \(errorDescription(error))")
         }
 
         guard !Task.isCancelled else { return }
@@ -78,7 +79,7 @@ enum APIExamples {
             let response = try await service.getCarrier(code: "112")
             print("Перевозчик: \(response.carrier?.title ?? response.carriers?.first?.title ?? "не найден")")
         } catch {
-            print("Не удалось получить информацию о перевозчике")
+            print("Не удалось получить информацию о перевозчике: \(errorDescription(error))")
         }
 
         guard !Task.isCancelled else { return }
@@ -87,7 +88,7 @@ enum APIExamples {
             let response = try await service.getStations()
             print("Страны в списке станций: \(response.countries?.count ?? 0)")
         } catch {
-            print("Не удалось получить список станций")
+            print("Не удалось получить список станций: \(errorDescription(error))")
         }
 
         guard !Task.isCancelled else { return }
@@ -96,7 +97,24 @@ enum APIExamples {
             let response = try await service.getCopyright()
             print("Копирайт: \(response.copyright.text ?? "не указан")")
         } catch {
-            print("Не удалось получить копирайт")
+            print("Не удалось получить копирайт: \(errorDescription(error))")
+        }
+    }
+
+    private static func errorDescription(_ error: Error) -> String {
+        if let clientError = error as? ClientError {
+            return errorDescription(clientError.underlyingError)
+        }
+
+        switch error {
+        case let APIError.httpStatus(code):
+            return "HTTP-ошибка, код \(code)"
+        case let urlError as URLError:
+            return "URLError, код \(urlError.code.rawValue)"
+        case is DecodingError:
+            return "DecodingError: ошибка декодирования ответа"
+        default:
+            return String(describing: type(of: error))
         }
     }
 }
