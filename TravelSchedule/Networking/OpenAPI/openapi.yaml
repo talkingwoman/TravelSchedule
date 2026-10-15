@@ -522,6 +522,16 @@ components:
     Segment:
       type: object
       properties:
+        has_transfers:
+          type: boolean
+        transfers:
+          type: array
+          items:
+            $ref: '#/components/schemas/Station'
+        details:
+          type: array
+          items:
+            $ref: '#/components/schemas/RouteDetail'
         from:
           $ref: '#/components/schemas/Station'
         to:
@@ -539,6 +549,13 @@ components:
         duration:
           type: number
           description: Длительность рейса в секундах
+    RouteDetail:
+      type: object
+      properties:
+        duration:
+          type: number
+        thread:
+          $ref: '#/components/schemas/Thread'
     Pagination:
       type: object
       properties:
