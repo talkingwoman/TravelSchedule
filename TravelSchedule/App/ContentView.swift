@@ -19,8 +19,12 @@ enum TravelStyle {
 }
 
 struct ContentView: View {
-    @State private var model = TravelScheduleModel()
+    @State private var model: TravelScheduleModel
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    init(model: TravelScheduleModel? = nil) {
+        _model = State(initialValue: model ?? TravelScheduleModel())
+    }
 
     var body: some View {
         ZStack {
@@ -67,6 +71,24 @@ struct ContentView: View {
         .foregroundStyle(TravelStyle.text)
         .tint(TravelStyle.blue)
         .animation(.spring(response: 0.42, dampingFraction: 0.9), value: model.presentation?.id)
+        .allowsHitTesting(model.failure == nil)
+        .accessibilityHidden(model.failure != nil)
+        .overlay {
+            if let failure = model.failure {
+                VStack(spacing: 0) {
+                    TravelNavigationHeader(onBack: { model.failure = nil })
+                    FailureView(failure: failure)
+                }
+                .foregroundStyle(TravelStyle.text)
+                .background(TravelStyle.background.ignoresSafeArea())
+                .accessibilityAddTraits(.isModal)
+            }
+        }
+        .onChange(of: model.failure) { _, failure in
+            if failure != nil {
+                UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
+            }
+        }
     }
 }
 
@@ -163,37 +185,33 @@ private struct RouteListView: View {
     var body: some View {
         VStack(spacing: 0) {
             TravelNavigationHeader()
-            if let failure = model.routesFailure {
-                FailureView(failure: failure)
+            Text(model.routeTitle)
+                .font(.system(size: 24, weight: .bold))
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(16)
+            if model.isLoading {
+                ProgressView("Ищем варианты")
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else if model.filteredRoutes.isEmpty {
+                EmptyResultView(title: "Вариантов нет")
             } else {
-                Text(model.routeTitle)
-                    .font(.system(size: 24, weight: .bold))
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(16)
-                if model.isLoading {
-                    ProgressView("Ищем варианты")
-                        .frame(maxWidth: .infinity, maxHeight: .infinity)
-                } else if model.filteredRoutes.isEmpty {
-                    EmptyResultView(title: "Вариантов нет")
-                } else {
-                    ScrollView {
-                        LazyVStack(spacing: 8) {
-                            ForEach(model.filteredRoutes) { route in
-                                NavigationLink {
-                                    NamedPlaceholderView(title: "Информация о перевозчике", showsBack: true)
-                                } label: {
-                                    RouteRow(route: route)
-                                }
-                                .buttonStyle(.plain)
+                ScrollView {
+                    LazyVStack(spacing: 8) {
+                        ForEach(model.filteredRoutes) { route in
+                            NavigationLink {
+                                NamedPlaceholderView(title: "Информация о перевозчике", showsBack: true)
+                            } label: {
+                                RouteRow(route: route)
                             }
+                            .buttonStyle(.plain)
                         }
-                        .padding(.horizontal, 16)
                     }
+                    .padding(.horizontal, 16)
                 }
             }
         }
         .safeAreaInset(edge: .bottom, spacing: 0) {
-            if model.routesFailure == nil && !model.isLoading {
+            if !model.isLoading {
                 NavigationLink {
                     TimeFilterView(model: model)
                 } label: {

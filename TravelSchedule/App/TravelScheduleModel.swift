@@ -143,11 +143,20 @@ final class TravelScheduleModel {
     var showRoutes = false
     var transferChoice: Bool?
     var selectedPeriods = Set<DeparturePeriod>()
-    var citiesFailure: TravelFailure?
-    var routesFailure: TravelFailure?
+    var failure: TravelFailure?
+    private let stationsService: (any StationsListServiceProtocol)?
+    private let routesService: (any ScheduleBetweenStationsServiceProtocol)?
     private var citiesRequestID: UUID?
     private var routesRequestID: UUID?
     private var hasLoadedRoutes = false
+
+    init(
+        stationsService: (any StationsListServiceProtocol)? = nil,
+        routesService: (any ScheduleBetweenStationsServiceProtocol)? = nil
+    ) {
+        self.stationsService = stationsService
+        self.routesService = routesService
+    }
 
     var allowsTransfers: Bool { transferChoice ?? true }
     var hasActiveFilters: Bool { !selectedPeriods.isEmpty || transferChoice != nil }
@@ -169,15 +178,13 @@ final class TravelScheduleModel {
         let requestID = UUID()
         citiesRequestID = requestID
         isLoadingCities = true
-        citiesFailure = nil
+        failure = nil
         defer {
             if citiesRequestID == requestID { isLoadingCities = false }
         }
 
         do {
-            let configuration = try APIConfiguration.load()
-            let client = try APIClientFactory.makeClient()
-            let service = StationsListService(client: client, apiKey: configuration.apiKey)
+            let service = try stationsService ?? APIClientFactory.makeStationsService()
             let response = try await service.getStations()
             let loadedCities = try await Self.makeCities(from: response)
             try Task.checkCancellation()
@@ -185,7 +192,7 @@ final class TravelScheduleModel {
             cities = loadedCities
         } catch {
             guard !Task.isCancelled, citiesRequestID == requestID else { return }
-            citiesFailure = Self.failure(for: error)
+            failure = Self.failure(for: error)
         }
     }
 
@@ -204,7 +211,7 @@ final class TravelScheduleModel {
     func prepareSearch() {
         routesRequestID = nil
         routes = []
-        routesFailure = nil
+        failure = nil
         hasLoadedRoutes = false
         selectedPeriods = []
         transferChoice = nil
@@ -216,15 +223,13 @@ final class TravelScheduleModel {
         let requestID = UUID()
         routesRequestID = requestID
         isLoading = true
-        routesFailure = nil
+        failure = nil
         defer {
             if routesRequestID == requestID { isLoading = false }
         }
 
         do {
-            let configuration = try APIConfiguration.load()
-            let client = try APIClientFactory.makeClient()
-            let service = ScheduleBetweenStationsService(client: client, apiKey: configuration.apiKey)
+            let service = try routesService ?? APIClientFactory.makeRoutesService()
             let formatter = DateFormatter()
             formatter.locale = Locale(identifier: "en_US_POSIX")
             formatter.calendar = Calendar(identifier: .gregorian)
@@ -248,7 +253,7 @@ final class TravelScheduleModel {
             hasLoadedRoutes = true
         } catch {
             guard !Task.isCancelled, routesRequestID == requestID else { return }
-            routesFailure = Self.failure(for: error)
+            failure = Self.failure(for: error)
         }
     }
 

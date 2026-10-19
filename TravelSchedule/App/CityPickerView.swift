@@ -17,9 +17,7 @@ struct CityPickerView: View {
         NavigationStack {
             VStack(spacing: 0) {
                 TravelNavigationHeader(title: "Выбор города", onBack: onClose)
-                if let failure = model.citiesFailure {
-                    FailureView(failure: failure)
-                } else if model.isLoadingCities {
+                if model.isLoadingCities {
                     ProgressView("Загружаем города")
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
                 } else {
