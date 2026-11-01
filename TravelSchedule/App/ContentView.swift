@@ -20,6 +20,9 @@ enum TravelStyle {
 
 struct ContentView: View {
     @State private var model: TravelScheduleModel
+    @State private var selectedStory: StoryCollection?
+    @State private var viewedStories = Set<Int>()
+    @AppStorage("isDarkTheme") private var isDarkTheme = false
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     init(model: TravelScheduleModel? = nil) {
@@ -30,7 +33,10 @@ struct ContentView: View {
         ZStack {
             TabView(selection: $model.selectedTab) {
                 NavigationStack {
-                    MainSearchView(model: model)
+                    MainSearchView(model: model, viewedStories: viewedStories) { collection in
+                        viewedStories.insert(collection.id)
+                        selectedStory = collection
+                    }
                         .safeAreaInset(edge: .bottom, spacing: 0) {
                             TravelTabBar(selection: $model.selectedTab)
                         }
@@ -40,15 +46,17 @@ struct ContentView: View {
                 }
                 .tag(TravelTab.search)
 
-                NamedPlaceholderView(title: "Настройки")
-                    .safeAreaInset(edge: .bottom, spacing: 0) {
-                        TravelTabBar(selection: $model.selectedTab)
-                    }
-                    .tag(TravelTab.settings)
+                NavigationStack {
+                    SettingsView(isDarkTheme: $isDarkTheme) { model.failure = $0 }
+                        .safeAreaInset(edge: .bottom, spacing: 0) {
+                            TravelTabBar(selection: $model.selectedTab)
+                        }
+                }
+                .tag(TravelTab.settings)
             }
             .toolbar(.hidden, for: .tabBar)
-            .allowsHitTesting(model.presentation == nil)
-            .accessibilityHidden(model.presentation != nil)
+            .allowsHitTesting(model.presentation == nil && selectedStory == nil)
+            .accessibilityHidden(model.presentation != nil || selectedStory != nil)
 
             if case .cityPicker(let endpoint) = model.presentation {
                 CityPickerView(model: model, endpoint: endpoint) { place in
@@ -66,11 +74,23 @@ struct ContentView: View {
                 ))
                 .zIndex(1)
             }
+
+            if let collection = selectedStory {
+                StoryViewerView(collection: collection, isPaused: model.failure != nil) {
+                    selectedStory = nil
+                }
+                .id(collection.id)
+                .accessibilityAddTraits(.isModal)
+                .transition(reduceMotion ? .opacity : .scale(scale: 0.85).combined(with: .opacity).combined(with: .move(edge: .bottom)))
+                .zIndex(2)
+            }
         }
         .background(TravelStyle.background.ignoresSafeArea())
         .foregroundStyle(TravelStyle.text)
         .tint(TravelStyle.blue)
         .animation(.spring(response: 0.42, dampingFraction: 0.9), value: model.presentation?.id)
+        .animation(reduceMotion ? nil : .spring(response: 0.35, dampingFraction: 0.9), value: selectedStory?.id)
+        .preferredColorScheme(selectedStory != nil || isDarkTheme ? .dark : .light)
         .allowsHitTesting(model.failure == nil)
         .accessibilityHidden(model.failure != nil)
         .overlay {
@@ -123,37 +143,41 @@ private struct TravelTabBar: View {
 
 private struct MainSearchView: View {
     @Bindable var model: TravelScheduleModel
+    let viewedStories: Set<Int>
+    let onSelectStory: (StoryCollection) -> Void
 
     var body: some View {
         ScrollView {
-            VStack(spacing: 16) {
-                HStack(spacing: 16) {
-                    VStack(spacing: 0) {
-                        placeButton(for: .origin, place: model.origin)
-                        placeButton(for: .destination, place: model.destination)
+            VStack(spacing: 20) {
+                StoriesRow(viewedIDs: viewedStories, onSelect: onSelectStory)
+                VStack(spacing: 16) {
+                    HStack(spacing: 16) {
+                        VStack(spacing: 0) {
+                            placeButton(for: .origin, place: model.origin)
+                            placeButton(for: .destination, place: model.destination)
+                        }
+                        .background(.white, in: RoundedRectangle(cornerRadius: 20))
+                        Button(action: model.swapPlaces) {
+                            Image(systemName: "arrow.2.squarepath")
+                                .font(.system(size: 20, weight: .medium))
+                                .foregroundStyle(TravelStyle.blue)
+                                .frame(width: 36, height: 36)
+                                .background(.white, in: Circle())
+                                .frame(width: 36, height: 48)
+                        }
+                        .accessibilityLabel("Поменять местами города")
                     }
-                    .background(.white, in: RoundedRectangle(cornerRadius: 20))
-                    Button(action: model.swapPlaces) {
-                        Image(systemName: "arrow.2.squarepath")
-                            .font(.system(size: 20, weight: .medium))
-                            .foregroundStyle(TravelStyle.blue)
-                            .frame(width: 36, height: 36)
-                            .background(.white, in: Circle())
-                            .frame(width: 36, height: 48)
-                    }
-                    .accessibilityLabel("Поменять местами города")
-                }
-                .padding(16)
-                .background(TravelStyle.blue, in: RoundedRectangle(cornerRadius: 20))
+                    .padding(16)
+                    .background(TravelStyle.blue, in: RoundedRectangle(cornerRadius: 20))
 
-                if model.origin != nil && model.destination != nil {
-                    Button(action: model.prepareSearch) {
-                        PrimaryActionLabel(title: "Найти").frame(width: 150)
+                    if model.origin != nil && model.destination != nil {
+                        Button(action: model.prepareSearch) {
+                            PrimaryActionLabel(title: "Найти").frame(width: 150)
+                        }
                     }
                 }
+                .padding(.horizontal, 16)
             }
-            .padding(.horizontal, 16)
-            .padding(.top, 208)
         }
         .buttonStyle(.plain)
         .background(TravelStyle.background)
@@ -199,7 +223,7 @@ private struct RouteListView: View {
                     LazyVStack(spacing: 8) {
                         ForEach(model.filteredRoutes) { route in
                             NavigationLink {
-                                NamedPlaceholderView(title: "Информация о перевозчике", showsBack: true)
+                                CarrierInfoView(route: route)
                             } label: {
                                 RouteRow(route: route)
                             }
@@ -405,21 +429,6 @@ struct PrimaryActionLabel: View {
         .frame(maxWidth: .infinity)
         .frame(height: 60)
         .background(TravelStyle.blue, in: RoundedRectangle(cornerRadius: 16))
-    }
-}
-
-private struct NamedPlaceholderView: View {
-    let title: String
-    var showsBack = false
-
-    var body: some View {
-        VStack(spacing: 0) {
-            if showsBack { TravelNavigationHeader() }
-            EmptyResultView(title: title)
-        }
-        .background(TravelStyle.background)
-        .toolbar(.hidden, for: .navigationBar)
-        .toolbar(.hidden, for: .tabBar)
     }
 }
 
